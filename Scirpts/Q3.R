@@ -21,3 +21,14 @@ brfss <- brfss %>%
   mutate(
     covid_period = if_else(interview_year <= 2019, 0L, 1L)
   )
+
+# Step 7: Create depression numeric indicator
+brfss <- brfss %>%
+  mutate(
+    depress = if_else(depression_history == "Yes", 1L, 0L)
+  )
+
+# Step 8: Prepare clean modeling dataset
+model_data <- brfss %>%
+  select(depress, obese, covid_period, age_group, sex) %>%
+  drop_na()
