@@ -32,3 +32,22 @@ brfss <- brfss %>%
 model_data <- brfss %>%
   select(depress, obese, covid_period, age_group, sex) %>%
   drop_na()
+
+# Step 9: Fit logistic regression with interaction 
+model_int_fixed <- glm(
+  depress ~ obese * covid_period + age_group + sex,
+  data   = model_data,
+  family = binomial()
+)
+
+# Step 10: View model summary
+summary(model_int_fixed)
+
+# Step 11: Compute OR for obesity pre-COVID
+OR_pre <- exp(coef(model_int_fixed)["obese"])
+
+# Step 12: Compute OR for obesity post-COVID
+OR_post <- exp(
+  coef(model_int_fixed)["obese"] +
+    coef(model_int_fixed)["obese:covid_period"]
+)
