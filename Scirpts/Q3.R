@@ -72,3 +72,18 @@ ggplot(or_df, aes(x = Period, y = Odds_Ratio)) +
     y = "Odds Ratio (Obese vs Non-obese)"
   ) +
   theme_minimal()
+
+# Step 16: Create prediction grid
+pred_grid <- expand.grid(
+  obese = c(0, 1),
+  covid_period = c(0, 1),
+  age_group = levels(model_data$age_group)[1],
+  sex = levels(model_data$sex)[1]
+)
+
+# Step 17: Generate predicted probabilities
+pred_grid$pred_prob <- predict(
+  model_int_fixed,
+  newdata = pred_grid,
+  type = "response"
+)
