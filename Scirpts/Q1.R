@@ -93,6 +93,42 @@ anova(lm_temp)
 dummies <- model.matrix(obese ~ ., data = vars)[, -1]
 dummies <- as.data.frame(dummies)
 
+###############################################
+# 7. LOGISTIC REGRESSION
+###############################################
+
+log_model <- glm(
+  obese ~ age + sex + race_ethnicity + income_category +
+    any_exercise_last_month + binge_drinking + max_drinks_30day +
+    interview_year,
+  data = train,
+  family = binomial
+)
+
+summary(log_model)
+
+###############################################
+# 8. MODEL EVALUATION (LOGISTIC)
+###############################################
+
+# Predictions
+pred_prob <- predict(log_model, test, type = "response")
+pred_class <- ifelse(pred_prob > 0.5, "Yes", "No")
+
+# Confusion matrix
+confusionMatrix(as.factor(pred_class), test$obese)
+
+# ROC / AUC
+roc_obj <- roc(test$obese, pred_prob)
+plot(roc_obj)
+auc(roc_obj)
+
+# Deviance & AIC
+logLik(log_model)
+AIC(log_model)
+
+# McFadden pseudo-R2
+pR2(log_model)
 
 
 
