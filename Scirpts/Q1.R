@@ -67,6 +67,25 @@ xyplot(bmi ~ age,
        auto.key = TRUE,
        type = c("p", "r"))
 
+###############################################
+# 3. MULTICOLLINEARITY (VIF)
+###############################################
+
+# Fit a temporary linear model for VIF
+lm_temp <- lm(bmi ~ age + sex + race_ethnicity + income_category +
+                any_exercise_last_month + binge_drinking + max_drinks_30day +
+                interview_year,
+              data = vars)
+
+vif(lm_temp)
+
+###############################################
+# 4. F-TEST FOR MODEL FIT (Linear Regression EDA)
+###############################################
+
+anova(lm_temp)
+
+
 
 
 ###
