@@ -51,3 +51,24 @@ OR_post <- exp(
   coef(model_int_fixed)["obese"] +
     coef(model_int_fixed)["obese:covid_period"]
 )
+
+# Step 13: Print OR results
+OR_pre
+OR_post
+
+# Step 14: Create data frame for plotting
+or_df <- data.frame(
+  Period = c("Pre-COVID", "Post-COVID"),
+  Odds_Ratio = c(as.numeric(OR_pre), as.numeric(OR_post))
+)
+
+# Step 15: Plot odds ratios
+ggplot(or_df, aes(x = Period, y = Odds_Ratio)) +
+  geom_bar(stat = "identity", fill = "orange") +
+  geom_hline(yintercept = 1, linetype = "dashed") +
+  labs(
+    title = "Change in Obesity–Depression Association Pre vs Post COVID",
+    x = "Period",
+    y = "Odds Ratio (Obese vs Non-obese)"
+  ) +
+  theme_minimal()
