@@ -86,6 +86,14 @@ vif(lm_temp)
 anova(lm_temp)
 
 
+###############################################
+# 5. ONE-HOT ENCODING
+###############################################
+
+dummies <- model.matrix(obese ~ ., data = vars)[, -1]
+dummies <- as.data.frame(dummies)
+
+
 
 
 ###
