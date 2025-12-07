@@ -87,3 +87,20 @@ pred_grid$pred_prob <- predict(
   newdata = pred_grid,
   type = "response"
 )
+
+# Step 18: Create readable labels
+pred_grid <- pred_grid %>%
+  mutate(
+    Obesity_Status = if_else(obese == 1, "Obese", "Non-Obese"),
+    Period = if_else(covid_period == 1, "Post-COVID", "Pre-COVID")
+  )
+
+# Step 19: Plot predicted probabilities
+ggplot(pred_grid, aes(x = Period, y = pred_prob, fill = Obesity_Status)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(
+    title = "Predicted Probability of Depression by Obesity and COVID Period",
+    x = "Period",
+    y = "Predicted Probability of Depression"
+  ) +
+  theme_minimal()
