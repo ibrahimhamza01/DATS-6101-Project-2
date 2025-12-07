@@ -255,6 +255,51 @@ roc_lasso <- roc(response = test$obese, predictor = pred_prob_lasso, levels = c(
 plot(roc_lasso, main = paste("LASSO ROC - AUC =", round(auc(roc_lasso), 3)))
 auc(roc_lasso)
 
+###############################################
+# 12. CLASSIFICATION TREE
+###############################################
+
+# tree using train original data frame (rpart handles factors)
+tree_model <- rpart(obese ~ age + sex + race_ethnicity + income_category +
+                      any_exercise_last_month + binge_drinking + max_drinks_30day +
+                      interview_year,
+                    data = train, method = "class", control = rpart.control(cp = 0.001))
+
+rpart.plot(tree_model, main = "Classification Tree")
+
+# Predict & evaluate
+pred_tree_prob <- predict(tree_model, newdata = test, type = "prob")[, "Yes"]
+pred_tree_class <- factor(ifelse(pred_tree_prob > 0.5, "Yes", "No"), levels = c("No","Yes"))
+conf_mat_tree <- confusionMatrix(pred_tree_class, test$obese, positive = "Yes")
+print(conf_mat_tree)
+roc_tree <- roc(response = test$obese, predictor = pred_tree_prob, levels = c("No","Yes"))
+print(auc(roc_tree))
+
+###############################################
+# 13. RANDOM FOREST
+###############################################
+
+# Ensure response is factor for randomForest
+train_rf <- train %>% mutate(obese = factor(obese, levels = c("No","Yes")))
+set.seed(123)
+rf_model <- randomForest(obese ~ age + sex + race_ethnicity + income_category +
+                           any_exercise_last_month + binge_drinking + max_drinks_30day +
+                           interview_year,
+                         data = train_rf,
+                         ntree = 500, importance = TRUE)
+
+print(rf_model)
+varImpPlot(rf_model, main = "Random Forest Variable Importance")
+
+# Predict & evaluate
+pred_rf_prob <- predict(rf_model, newdata = test, type = "prob")[, "Yes"]
+pred_rf_class <- predict(rf_model, newdata = test, type = "response")
+conf_mat_rf <- confusionMatrix(pred_rf_class, test$obese, positive = "Yes")
+print(conf_mat_rf)
+roc_rf <- roc(response = test$obese, predictor = pred_rf_prob, levels = c("No","Yes"))
+print(auc(roc_rf))
+
+
 
 ###
 model1 <- glm(
