@@ -4,34 +4,40 @@ library(corrplot)
 library(car)
 library(caret)
 library(leaps)
-library(bestglm)
 library(pROC)
 library(pscl)
 library(rpart)
 library(rpart.plot)
 library(randomForest)
-library(MASS)
 library(glmnet)
+library(MASS)
 
 ###############################################
 # DATA PREP
 ###############################################
 
-brfss = readRDS("../Data/Processed/brfss_2018_2023.rds")
+brfss = readRDS('../Data/Processed/brfss_2018_2023.rds')
 
 brfss_postcovid <- subset(brfss, interview_year >= 2020)
 
-brfss_postcovid$obese <- ifelse(brfss_postcovid$bmi >= 30, 1, 0)
-brfss_postcovid$obese <- factor(brfss_postcovid$obese, labels = c("No","Yes"))
+# Create binary obesity variables: numeric (0/1) and factor
+brfss_postcovid <- brfss_postcovid %>%
+  mutate(
+    obese_num = ifelse(bmi >= 30, 1, 0),
+    obese = factor(obese_num, labels = c("No", "Yes"))
+  )
 
 ###############################################
 # SELECT VARIABLES FOR ANALYSIS
 ###############################################
 
 vars <- brfss_postcovid %>%
-  dplyr::select(obese, bmi, age, sex, race_ethnicity, income_category,
-         any_exercise_last_month, binge_drinking,
-         max_drinks_30day, interview_year)
+  dplyr::select(obese, obese_num, bmi, age, sex, race_ethnicity, income_category,
+         any_exercise_last_month, binge_drinking, max_drinks_30day, interview_year)
+
+# Quick check
+glimpse(vars)
+table(vars$interview_year, useNA = "ifany")
 
 ###############################################
 # 1. CORRELATION (PEARSON & SPEARMAN)
@@ -48,88 +54,206 @@ spearman_corr <- cor(numeric_vars, use = "complete.obs", method = "spearman")
 print(spearman_corr)
 
 # Heatmap
-corrplot(pearson_corr, method = "color", type = "upper")
+corrplot(pearson_corr, method = "color", type = "upper", tl.cex = 0.8)
 
 ###############################################
-# 2. LATTICE PLOTS
+# 2. LATTICE PLOTS (EDA)
 ###############################################
 
 # Density plot by obesity status
-densityplot(~ bmi | obese, data = vars)
+densityplot(~ bmi | obese, data = vars, main = "BMI density by Obesity status")
 
 # Boxplot income vs BMI
-bwplot(bmi ~ income_category, data = vars)
+bwplot(bmi ~ income_category, data = vars, main = "BMI by Income Category")
 
-# Scatterplot with regression line
-xyplot(bmi ~ age,
-       groups = obese,
-       data = vars,
-       auto.key = TRUE,
-       type = c("p", "r"))
+# Scatterplot bmi ~ age by obese
+xyplot(bmi ~ age, groups = obese, data = vars, auto.key = TRUE, type = c("p", "r"),
+       main = "BMI vs Age by Obese")
 
 ###############################################
-# 3. MULTICOLLINEARITY (VIF)
+# 3. MULTICOLLINEARITY (VIF) — use a linear proxy (bmi)
 ###############################################
 
-# Fit a temporary linear model for VIF
 lm_temp <- lm(bmi ~ age + sex + race_ethnicity + income_category +
                 any_exercise_last_month + binge_drinking + max_drinks_30day +
                 interview_year,
               data = vars)
 
-vif(lm_temp)
+vif_vals <- vif(lm_temp)
+print(vif_vals)
 
 ###############################################
 # 4. F-TEST FOR MODEL FIT (Linear Regression EDA)
 ###############################################
 
-anova(lm_temp)
-
-
-###############################################
-# 5. ONE-HOT ENCODING
-###############################################
-
-dummies <- model.matrix(obese ~ ., data = vars)[, -1]
-dummies <- as.data.frame(dummies)
+anova_lm_temp <- anova(lm_temp)
+print(anova_lm_temp)
+summary(lm_temp)
 
 ###############################################
-# 7. LOGISTIC REGRESSION
+# 5. TRAIN/TEST SPLIT
 ###############################################
 
-log_model <- glm(
-  obese ~ age + sex + race_ethnicity + income_category +
-    any_exercise_last_month + binge_drinking + max_drinks_30day +
-    interview_year,
-  data = train,
-  family = binomial
-)
+set.seed(123)
+train_index <- createDataPartition(vars$obese, p = 0.7, list = FALSE)
+train <- vars[train_index, ]
+test  <- vars[-train_index, ]
 
-summary(log_model)
+# confirm sizes
+nrow(train); nrow(test)
 
 ###############################################
-# 8. MODEL EVALUATION (LOGISTIC)
+# 6. ONE-HOT ENCODING (model.matrix)
 ###############################################
 
-# Predictions
-pred_prob <- predict(log_model, test, type = "response")
-pred_class <- ifelse(pred_prob > 0.5, "Yes", "No")
+# Design matrices (remove intercept column)
+X_train <- model.matrix(obese ~ age + sex + race_ethnicity + income_category +
+                          any_exercise_last_month + binge_drinking + max_drinks_30day +
+                          interview_year,
+                        data = train)[, -1, drop = FALSE]
 
-# Confusion matrix
-confusionMatrix(as.factor(pred_class), test$obese)
+X_test  <- model.matrix(obese ~ age + sex + race_ethnicity + income_category +
+                          any_exercise_last_month + binge_drinking + max_drinks_30day +
+                          interview_year,
+                        data = test)[, -1, drop = FALSE]
 
-# ROC / AUC
-roc_obj <- roc(test$obese, pred_prob)
-plot(roc_obj)
-auc(roc_obj)
+# Make sure train/test columns match (if some factor levels absent in test/train)
+train_cols <- colnames(X_train)
+test_cols  <- colnames(X_test)
+
+# Add missing columns to test or train as zeros
+cols_missing_in_test <- setdiff(train_cols, test_cols)
+if(length(cols_missing_in_test) > 0){
+  X_test <- cbind(X_test, matrix(0, nrow = nrow(X_test), ncol = length(cols_missing_in_test),
+                                 dimnames = list(NULL, cols_missing_in_test)))
+}
+cols_missing_in_train <- setdiff(test_cols, train_cols)
+if(length(cols_missing_in_train) > 0){
+  X_train <- cbind(X_train, matrix(0, nrow = nrow(X_train), ncol = length(cols_missing_in_train),
+                                   dimnames = list(NULL, cols_missing_in_train)))
+}
+
+# Re-order columns to be identical
+X_train <- X_train[, sort(colnames(X_train)), drop = FALSE]
+X_test  <- X_test[, sort(colnames(X_test)), drop = FALSE]
+
+# Clean numeric dataframes (remove possible attributes)
+X_train <- as.data.frame(apply(X_train, 2, as.numeric))
+X_test  <- as.data.frame(apply(X_test, 2, as.numeric))
+
+# Response vectors
+y_train <- ifelse(train$obese == "Yes", 1, 0)
+y_test  <- ifelse(test$obese == "Yes", 1, 0)
+
+###############################################
+# 7. Remove zero-variance predictors (if any) from X_train and X_test
+###############################################
+
+zero_var_cols <- which(apply(X_train, 2, var, na.rm = TRUE) == 0)
+if(length(zero_var_cols) > 0){
+  keep_cols <- setdiff(colnames(X_train), colnames(X_train)[zero_var_cols])
+  X_train <- X_train[, keep_cols, drop = FALSE]
+  X_test  <- X_test[, keep_cols, drop = FALSE]
+}
+
+###############################################
+# 8. LOGISTIC REGRESSION (baseline)
+###############################################
+
+# Build formula version of model for readable summary (use train df)
+glm_baseline <- glm(obese ~ age + sex + race_ethnicity + income_category +
+                      any_exercise_last_month + binge_drinking + max_drinks_30day +
+                      interview_year,
+                    data = train,
+                    family = binomial)
+
+summary(glm_baseline)
+
+###############################################
+# 9. EVALUATION OF LOGISTIC MODEL on TEST SET
+###############################################
+
+# Predicted probabilities and classes
+pred_prob <- predict(glm_baseline, newdata = test, type = "response")
+pred_class <- factor(ifelse(pred_prob > 0.5, "Yes", "No"), levels = c("No", "Yes"))
+
+# Confusion matrix (caret)
+conf_mat <- confusionMatrix(pred_class, test$obese, positive = "Yes")
+print(conf_mat)
+
+# ROC/AUC
+roc_obj <- roc(response = test$obese, predictor = pred_prob, levels = c("No","Yes"))
+plot(roc_obj, main = paste("ROC - AUC =", round(auc(roc_obj), 3)))
+auc_val <- auc(roc_obj); print(auc_val)
 
 # Deviance & AIC
-logLik(log_model)
-AIC(log_model)
+print(logLik(glm_baseline))
+print(AIC(glm_baseline))
 
 # McFadden pseudo-R2
-pR2(log_model)
+pR2_vals <- pR2(glm_baseline)
+print(pR2_vals)
 
+###############################################
+# 10. MODEL SELECTION — regsubsets()
+###############################################
+
+# best subsets for BMI (continuous outcome)
+regfit_bmi <- regsubsets(bmi ~ age + sex + race_ethnicity + income_category +
+                           any_exercise_last_month + binge_drinking + max_drinks_30day +
+                           interview_year,
+                         data = train, nvmax = 10)
+reg_bmi_sum <- summary(regfit_bmi)
+print(reg_bmi_sum$adjr2)
+print(reg_bmi_sum$bic)
+print(reg_bmi_sum$cp)
+
+# OPTIONAL: regsubsets on linear-probability outcome (0/1) - interpret cautiously
+regfit_lpm <- regsubsets(obese_num ~ age + sex + race_ethnicity + income_category +
+                           any_exercise_last_month + binge_drinking + max_drinks_30day +
+                           interview_year,
+                         data = train, nvmax = 10)
+reg_lpm_sum <- summary(regfit_lpm)
+print(reg_lpm_sum$adjr2)
+print(reg_lpm_sum$bic)
+print(reg_lpm_sum$cp)
+
+###############################################
+# 11. MODEL SELECTION — glmnet (LASSO logistic)
+###############################################
+
+# Convert to matrix form for glmnet
+X_train_mat <- as.matrix(X_train)
+X_test_mat  <- as.matrix(X_test)
+
+set.seed(123)
+cvfit <- cv.glmnet(X_train_mat, y_train, family = "binomial", alpha = 1, nfolds = 10)
+plot(cvfit); title("CV curve for LASSO (logistic)")
+
+best_lambda <- cvfit$lambda.min
+best_lambda
+lambda_1se <- cvfit$lambda.1se
+lambda_1se
+
+# Fit final LASSO model at lambda.min
+lasso_fit <- glmnet(X_train_mat, y_train, family = "binomial", alpha = 1, lambda = best_lambda)
+
+# Coefficients (non-zero)
+coef_lasso <- coef(lasso_fit)
+print(coef_lasso)
+nz_coefs <- rownames(coef_lasso)[which(as.vector(coef_lasso) != 0)]
+nz_coefs
+
+# Predict on test set
+pred_prob_lasso <- predict(lasso_fit, newx = X_test_mat, type = "response")[,1]
+pred_class_lasso <- factor(ifelse(pred_prob_lasso > 0.5, "Yes", "No"), levels = c("No","Yes"))
+
+conf_mat_lasso <- confusionMatrix(pred_class_lasso, test$obese, positive = "Yes")
+print(conf_mat_lasso)
+
+roc_lasso <- roc(response = test$obese, predictor = pred_prob_lasso, levels = c("No","Yes"))
+plot(roc_lasso, main = paste("LASSO ROC - AUC =", round(auc(roc_lasso), 3)))
+auc(roc_lasso)
 
 
 ###
