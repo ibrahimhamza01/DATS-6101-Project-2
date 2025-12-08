@@ -104,3 +104,20 @@ ggplot(pred_grid, aes(x = Period, y = pred_prob, fill = Obesity_Status)) +
     y = "Predicted Probability of Depression"
   ) +
   theme_minimal()
+
+# Add confidence intervals
+pred_probs <- predict(model_int_fixed, newdata = pred_grid, type = "link", se.fit = TRUE)
+
+pred_grid$fit <- plogis(pred_probs$fit)
+pred_grid$lwr <- plogis(pred_probs$fit - 1.96 * pred_probs$se.fit)
+pred_grid$upr <- plogis(pred_probs$fit + 1.96 * pred_probs$se.fit)
+
+ggplot(pred_grid, aes(x = Period, y = fit, color = Obesity_Status)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = lwr, ymax = upr), width = 0.1) +
+  geom_line(aes(group = Obesity_Status)) +
+  labs(
+    title = "Predicted Probability of Depression with 95% CI",
+    y = "Predicted Probability"
+  ) +
+  theme_minimal()
