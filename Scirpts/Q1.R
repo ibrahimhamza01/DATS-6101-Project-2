@@ -299,6 +299,43 @@ print(conf_mat_rf)
 roc_rf <- roc(response = test$obese, predictor = pred_rf_prob, levels = c("No","Yes"))
 print(auc(roc_rf))
 
+###############################################
+# 14. CROSS-VALIDATION (10-fold) — caret wrapper (repeated for stability)
+###############################################
+
+set.seed(123)
+train_control <- trainControl(method = "cv", number = 10, classProbs = TRUE,
+                              summaryFunction = twoClassSummary, savePredictions = TRUE)
+
+cv_glm <- train(obese ~ age + sex + race_ethnicity + income_category +
+                  any_exercise_last_month + binge_drinking + max_drinks_30day +
+                  interview_year,
+                data = train,
+                method = "glm",
+                family = "binomial",
+                trControl = train_control,
+                metric = "ROC")   # uses ROC (AUC) as selection metric
+
+print(cv_glm)
+plot(varImp(cv_glm), main = "Variable importance - CV GLM")
+
+###############################################
+# 15. MODEL DIAGNOSTICS & OUTPUT SUMMARY
+###############################################
+
+# Summary table of AUCs
+auc_table <- tibble(
+  model = c("Logistic (glm)", "LASSO (glmnet)", "Tree (rpart)", "RandomForest"),
+  AUC = c(as.numeric(auc_val), as.numeric(auc(roc_lasso)), as.numeric(auc(roc_tree)), as.numeric(auc(roc_rf)))
+)
+print(auc_table)
+
+# Print McFadden and deviance for baseline GLM
+print(pR2(glm_baseline))
+print(deviance(glm_baseline))
+print(df.residual(glm_baseline))
+
+
 
 
 ###
