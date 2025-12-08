@@ -11,6 +11,7 @@ library(rpart.plot)
 library(randomForest)
 library(glmnet)
 library(MASS)
+library(ezids)
 
 ###############################################
 # DATA PREP
@@ -55,6 +56,7 @@ print(spearman_corr)
 
 # Heatmap
 corrplot(pearson_corr, method = "color", type = "upper", tl.cex = 0.8)
+corrplot(spearman_corr, method = "color", type = "upper", tl.cex = 0.8)
 
 ###############################################
 # 2. LATTICE PLOTS (EDA)
@@ -80,7 +82,7 @@ lm_temp <- lm(bmi ~ age + sex + race_ethnicity + income_category +
               data = vars)
 
 vif_vals <- vif(lm_temp)
-print(vif_vals)
+xkabledply(vif_vals)
 
 ###############################################
 # 4. F-TEST FOR MODEL FIT (Linear Regression EDA)
@@ -89,6 +91,8 @@ print(vif_vals)
 anova_lm_temp <- anova(lm_temp)
 print(anova_lm_temp)
 summary(lm_temp)
+
+xkabledply(summary(lm_temp))
 
 ###############################################
 # 5. TRAIN/TEST SPLIT
@@ -168,6 +172,8 @@ glm_baseline <- glm(obese ~ age + sex + race_ethnicity + income_category +
                     family = binomial)
 
 summary(glm_baseline)
+
+xkabledply(summary(glm_baseline))
 
 ###############################################
 # 9. EVALUATION OF LOGISTIC MODEL on TEST SET
