@@ -174,7 +174,6 @@ mean_bmi
 
 
 
-
 ## Logistic Regression Model for physical activity in the last month (bmi)
 activityLogit <- glm(any_exercise_last_month ~ bmi , data = brfss_1, family = "binomial")
 summary(activityLogit)
@@ -208,6 +207,41 @@ plot(i)
 activityLogit3 <- glm(obese ~ exercise + age +self_health, data = brfss_1, family = "binomial")
 summary(activityLogit3)
 
+## Confusion Matrix
+library(ModelMetrics)
+#confusionMatrix(activityLogit3)
+#default is threshold 0.5
+xkabledply( confusionMatrix(actual=activityLogit3$y,predicted=activityLogit3$fitted.values), title = "Confusion matrix from Logit Model" )
+
+
+brfss_3 = brfss_1[,c(10,19:25)]
+str(brfss_3)
+
+loadPkg("bestglm")
+res.bestglm1 <- bestglm(Xy = brfss_3, family = binomial,
+                       IC = "AIC",                 # Information criteria for
+                       method = "exhaustive")
+summary(res.bestglm1)
+
+res.bestglm1$BestModels
+
+str(brfss_1)
+brfss_2 = brfss_1[,c(5,10,19:25)]
+str(brfss_2)
+
+loadPkg("bestglm")
+res.bestglm <- bestglm(Xy = brfss_2, family = binomial,
+                       IC = "AIC",                 # Information criteria for
+                       method = "exhaustive")
+summary(res.bestglm)
+
+res.bestglm$BestModels
+
+## Logistic Regression Model for bmi overweight/obese in the last month (bmi)
+activityLogit3 <- glm(obese ~ exercise + age +self_health, data = brfss_1, family = "binomial")
+summary(activityLogit3)
+
+
 #### Receiver-Operator-Characteristic (ROC) curve and Area-Under-Curve (AUC)
 
 ## Receiver-Operator-Characteristic (ROC) curve and Area-Under-Curve (AUC) measures the true positive rate (or sensitivity) against the false positive rate (or specificity). The area-under-curve is always between 0.5 and 1. Values higher than 0.8 is considered good model fit.  
@@ -228,7 +262,7 @@ unloadPkg("pscl")
 ###
 
 ## Logistic Regression Model for bmi overweight/obese in the last month (bmi)
-activityLogit4 <- glm(obese ~ exercise + age+self_health+diabetes+stroke, data = brfss_1, family = "binomial")
+activityLogit4 <- glm(obese ~ exercise +age+self_health+diabetes+stroke+heart_attack+coronary, data = brfss_3, family = "binomial")
 summary(activityLogit4)
 
 #### Receiver-Operator-Characteristic (ROC) curve and Area-Under-Curve (AUC)
@@ -236,13 +270,43 @@ summary(activityLogit4)
 ## Receiver-Operator-Characteristic (ROC) curve and Area-Under-Curve (AUC) measures the true positive rate (or sensitivity) against the false positive rate (or specificity). The area-under-curve is always between 0.5 and 1. Values higher than 0.8 is considered good model fit.  
 
 prob4=predict(activityLogit4, type = "response" )
-brfss_1$prob4=prob4
-j <- roc(overweight_or_obese~prob4, data=brfss_1)
-auc(j) # area-under-curve prefer 0.8 or higher.
-plot(j)
+brfss_3$prob4=prob4
+k <- roc(obese~prob4, data=brfss_3)
+auc(k) # area-under-curve prefer 0.8 or higher.
+plot(k)
 
-##McFadden for model 2 (bmi & age)
+##McFadden for model 4
 library(pscl) # use pR2( ) function to calculate McFadden statistics for model eval
 activityLogit4pr2 = pR2(activityLogit4)
 activityLogit4pr2
 unloadPkg("pscl")
+
+## Logistic Regression Model for bmi overweight/obese in the last month (bmi)
+activityLogit5 <- glm(obese ~ exercise +age+self_health+diabetes+stroke+coronary, data = brfss_3, family = "binomial")
+summary(activityLogit5)
+
+#### Receiver-Operator-Characteristic (ROC) curve and Area-Under-Curve (AUC)
+
+## Receiver-Operator-Characteristic (ROC) curve and Area-Under-Curve (AUC) measures the true positive rate (or sensitivity) against the false positive rate (or specificity). The area-under-curve is always between 0.5 and 1. Values higher than 0.8 is considered good model fit.  
+
+prob5=predict(activityLogit5, type = "response" )
+brfss_3$prob5=prob5
+k <- roc(obese~prob5, data=brfss_3)
+auc(k) # area-under-curve prefer 0.8 or higher.
+plot(k)
+
+##McFadden for model 5
+library(pscl) # use pR2( ) function to calculate McFadden statistics for model eval
+activityLogit5pr2 = pR2(activityLogit5)
+activityLogit5pr2
+unloadPkg("pscl")
+
+## Confusion Matrix
+library(ModelMetrics)
+print(confusionMatrix(activityLogit5))
+#default is threshold 0.5
+xkabledply( confusionMatrix(actual=activityLogit5$y,predicted=activityLogit5$fitted.values), title = "Confusion matrix from Logit Model" )
+print
+
+conf_mat_5 <- confusionMatrix(activityLogit5, brfss_3$obese, positive = "1")
+
