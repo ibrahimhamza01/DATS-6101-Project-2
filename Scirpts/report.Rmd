@@ -263,6 +263,36 @@ print(auc(roc_rf))
 This ensemble method generated 500 trees and yielded an AUC of 0.594, which is comparable to the linear models but superior in capturing non-linear effects. The Variable Importance plot confirms that 'any_exercise_last_month', 'max_drinks_30day', age, and 'race_ethnicity' are the most influential factors, showing the highest Mean Decrease Gini.
 <br>
 
+## Model Evaluation
+```{r, message=FALSE, warning=FALSE}
+roc_glm <- roc(test$obese, predict(glm_baseline, test, type = "response"))
+roc_tree <- roc(test$obese, predict(tree_model, test, type = "prob")[, "Yes"])
+roc_rf   <- roc(test$obese, predict(rf_model, test, type = "prob")[, "Yes"])
+
+auc_table <- tibble(
+  Model = c("Logistic Regression", "Classification Tree", "Random Forest"),
+  AUC = c(auc(roc_glm), auc(roc_tree), auc(roc_rf))
+)
+
+xkabledply(auc_table)
+```
+<br>
+This comparison demonstrates that tree-based ensemble methods, like Random Forest, and Logistic Regression achieved nearly identical predictive performance, hovering just under an AUC of 0.60. The Classification Tree, due to its simplicity, performed the worst with an AUC of 0.5000.
+<br>
+
+### Critical Limitations
+Weak Predictive Power: The model's low AUC ($\approx 0.60$) and very low McFadden pseudo-$R^2$ ($\approx 0.02$) confirm that the tested variables have weak explanatory power over obesity status.
+
+Imbalance/Bias: Models show extremely high Specificity ($\approx 0.98$) but fail to detect the obese class due to critically low Sensitivity ($\approx 0.03-0.05$), indicating severe class imbalance and a conservative prediction bias toward the majority "No" class.
+
+Insufficient Features: The low predictive success suggests crucial drivers of obesity (e.g., genetics, detailed diet) are not captured by the current BRFSS demographic and lifestyle features.
+
+### Recommendations for Future Work
+Address Imbalance: Implement undersampling to balance the "No" and "Yes" classes to improve Sensitivity and reduce prediction bias.
+
+Feature Augmentation: Introduce better features (e.g., specific diet indicators or local environmental data) to increase the model's overall signal.
+
+Non-Linear Models: Test an SVM with a non-linear kernel to determine if a complex, curved boundary can better separate the overlapping data points.
 
 
 
