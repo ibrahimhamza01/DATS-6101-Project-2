@@ -37,6 +37,7 @@ library(randomForest)
 library(glmnet)
 library(MASS)
 library(ezids)
+library(kableExtra)
 
 brfss = readRDS("../Data/Processed/brfss_2018_2023.rds")
 ```
@@ -69,7 +70,7 @@ Can we predict the likelihood of an adult being obese (BMI ≥ 30) based on demo
 Body Mass Index (BMI) was used to define obesity status following CDC guidelines. A binary obesity indicator was created where individuals with a BMI of 30 or higher were classified as obese, and those with a BMI below 30 were classified as non-obese. This outcome variable was represented both as a numeric indicator (0/1) for modeling purposes and as a factor variable to support classification-based methods.
 <br>
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 brfss = readRDS('../Data/Processed/brfss_2018_2023.rds')
 
 brfss_postcovid <- subset(brfss, interview_year >= 2020)
@@ -85,7 +86,7 @@ brfss_postcovid <- brfss_postcovid %>%
 Variables were selected based on prior public health literature and their theoretical relevance to obesity risk. The final analytic dataset includes demographic characteristics, lifestyle behaviors, and temporal indicators that may influence obesity outcomes.
 <br>
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 vars <- brfss_postcovid %>%
   dplyr::select(obese, obese_num, bmi, age, sex, race_ethnicity, income_category,
                 any_exercise_last_month, binge_drinking,
@@ -94,7 +95,173 @@ vars <- brfss_postcovid %>%
 glimpse(vars)
 ```
 
+## EDA
+```{r, message=FALSE, warning=FALSE}
+numeric_vars <- vars %>% 
+  dplyr::select(age, bmi, max_drinks_30day, interview_year)
 
+spearman_corr <- cor(numeric_vars, use = "complete.obs", method = "spearman")
+
+corrplot(spearman_corr, method = "color", type = "upper")
+```
+<br>
+The Spearman correlation matrix indicates very weak monotonic relationships among the numerical variables, with the strongest relationships being a weak negative correlation between age and max_drinks_30day (more alcohol consumed in one sitting is associated with younger age) and a weak positive correlation between age and bmi.
+<br>
+
+```{r, message=FALSE, warning=FALSE}
+densityplot(~ bmi | obese, data = vars)
+```
+<br>
+This density plot shows the distribution of BMI for the non-obese ("No") and obese ("Yes") classes. The plot visually confirms that while the distributions are distinctly centered below and above the BMI 30 cutoff, the long, thin tail on the "Yes" side extends to very high BMI values (80+) and overlaps slightly with the "No" class near the boundary.
+<br>
+
+```{r, message=FALSE, warning=FALSE}
+bwplot(bmi ~ income_category, data = vars)
+```
+<br>
+This boxplot illustrates the distribution of BMI across Income Categories. The chart shows that the median BMI is nearly constant across all five income brackets, but all categories contain extreme outliers, indicating high-BMI individuals exist across the entire socioeconomic spectrum.
+<br>
+
+```{r, message=FALSE, warning=FALSE}
+xyplot(bmi ~ age, groups = obese, data = vars,
+       auto.key = TRUE, type = c("p", "r"))
+```
+<br>
+This scatterplot, showing BMI vs. Age, visually demonstrates the difficulty of the classification task. The two classes ("No" in blue, "Yes" in orange) show significant vertical overlap, especially in middle age, meaning a person's age provides little clean separation for predicting their obesity status.
+<br>
+
+```{r, message=FALSE, warning=FALSE}
+lm_temp <- lm(bmi ~ age + sex + race_ethnicity + income_category +
+                any_exercise_last_month + binge_drinking +
+                max_drinks_30day + interview_year,
+              data = vars)
+
+xkabledply(vif(lm_temp))
+```
+<br>
+The key finding is that all GVIF (Generalized VIF) values are very close to 1.0 (with the highest being 1.17 for max_drinks_30day). This confirms that there is no significant multicollinearity among your set of predictors, meaning that each variable contributes unique information to the model and their effects can be reliably separated.
+<br>
+
+## Modeling Approach
+
+### Train–Test Split
+```{r, message=FALSE, warning=FALSE}
+set.seed(123)
+train_index <- createDataPartition(vars$obese, p = 0.7, list = FALSE)
+train <- vars[train_index, ]
+test  <- vars[-train_index, ]
+```
+<br>
+The dataset was randomly divided into training (70%) and testing (30%) sets using stratified sampling to preserve the distribution of obesity status. The training set was used for model development, while the testing set was reserved for performance evaluation.
+<br>
+
+### Feature Engineering
+```{r, message=FALSE, warning=FALSE}
+X_train <- model.matrix(obese ~ age + sex + race_ethnicity + income_category +
+                          any_exercise_last_month + binge_drinking +
+                          max_drinks_30day + interview_year,
+                        data = train)[, -1]
+
+X_test <- model.matrix(obese ~ age + sex + race_ethnicity + income_category +
+                         any_exercise_last_month + binge_drinking +
+                         max_drinks_30day + interview_year,
+                       data = test)[, -1]
+```
+<br>
+Categorical predictors were converted to numeric format using one-hot encoding to support regression and regularization methods. Feature matrices for the training and testing sets were aligned and cleaned to ensure consistent predictor structures across all models.
+<br>
+
+### Baseline Model: Logistic Regression
+```{r, message=FALSE, warning=FALSE}
+glm_baseline <- glm(
+  obese ~ age + sex + race_ethnicity + income_category +
+    any_exercise_last_month + binge_drinking +
+    max_drinks_30day + interview_year,
+  data = train,
+  family = binomial
+)
+
+xkabledply(summary(glm_baseline))
+```
+<br>
+This logistic regression summary shows that nearly all predictors are statistically significant (many at $p < 0.0001$), with lack of exercise (coefficient 0.5918), Black NH race (coefficient 0.5868), age (coefficient 0.0110), and max drinks (coefficient 0.0546) having the strongest positive association with the log-odds of being obese. The model suggests that the probability of obesity increases with age, max drinks consumed, being in certain minority groups, and not exercising.
+<br>
+
+### Best Subset Selection
+```{r, message=FALSE, warning=FALSE}
+regfit_bmi <- regsubsets(
+  bmi ~ age + sex + race_ethnicity + income_category +
+    any_exercise_last_month + binge_drinking +
+    max_drinks_30day + interview_year,
+  data = train,
+  nvmax = 10
+)
+
+summary(regfit_bmi)
+```
+<br>
+This exhaustive selection process for predicting continuous BMI shows that 'any_exercise_last_monthNo' is the single best predictor, followed by age, and then max_drinks_30day and 'race_ethnicityBlack NH'. The model requires at least 8 to 10 variables to reach the highest Adjusted $R^2$ (as seen in regsubsets_Q1.png which shows the included variables), confirming that many factors are needed but their combined linear effect on BMI is inherently weak.
+<br>
+
+### LASSO Logistic Regression
+```{r, message=FALSE, warning=FALSE}
+X_train_mat <- as.matrix(X_train)
+y_train <- ifelse(train$obese == "Yes", 1, 0)
+
+set.seed(123)
+cvfit <- cv.glmnet(X_train_mat, y_train, family = "binomial", alpha = 1)
+
+plot(cvfit)
+```
+<br>
+Using cross-validation, LASSO was implemented to find the optimal penalty ($\lambda$) that minimizes out-of-sample error, resulting in a slightly higher AUC (0.596) than the standard Logistic Regression (0.595).  This process retains the strongest predictors while shrinking the coefficients of less relevant variables toward zero, improving model generalization.
+<br>
+
+### Classification Tree
+```{r, message=FALSE, warning=FALSE}
+tree_model <- rpart(
+  obese ~ age + sex + race_ethnicity + income_category +
+    any_exercise_last_month + binge_drinking +
+    max_drinks_30day + interview_year,
+  data = train,
+  method = "class"
+)
+
+pred_tree_prob <- predict(tree_model, newdata = test, type = "prob")[, "Yes"]
+pred_tree_class <- factor(ifelse(pred_tree_prob > 0.5, "Yes", "No"), levels = c("No","Yes"))
+conf_mat_tree <- confusionMatrix(pred_tree_class, test$obese, positive = "Yes")
+print(conf_mat_tree)
+roc_tree <- roc(response = test$obese, predictor = pred_tree_prob, levels = c("No","Yes"))
+print(auc(roc_tree))
+```
+<br>
+The Classification Tree model developed using rpart is highly interpretable, explicitly showing that the primary split for predicting obesity is based on 'any_exercise_last_month', followed by age. The tree achieved the lowest AUC (0.543) of all models, indicating that its simple, sequential decision logic sacrifices predictive accuracy for interpretability.
+<br>
+
+### Random Forest
+```{r, message=FALSE, warning=FALSE}
+set.seed(123)
+rf_model <- randomForest(
+  obese ~ age + sex + race_ethnicity + income_category +
+    any_exercise_last_month + binge_drinking +
+    max_drinks_30day + interview_year,
+  data = train,
+  ntree = 500,
+  importance = TRUE
+)
+
+xkabledply(varImpPlot(rf_model))
+
+pred_rf_prob <- predict(rf_model, newdata = test, type = "prob")[, "Yes"]
+pred_rf_class <- predict(rf_model, newdata = test, type = "response")
+conf_mat_rf <- confusionMatrix(pred_rf_class, test$obese, positive = "Yes")
+print(conf_mat_rf)
+roc_rf <- roc(response = test$obese, predictor = pred_rf_prob, levels = c("No","Yes"))
+print(auc(roc_rf))
+```
+<br>
+This ensemble method generated 500 trees and yielded an AUC of 0.594, which is comparable to the linear models but superior in capturing non-linear effects. The Variable Importance plot confirms that 'any_exercise_last_month', 'max_drinks_30day', age, and 'race_ethnicity' are the most influential factors, showing the highest Mean Decrease Gini.
+<br>
 
 
 
