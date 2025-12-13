@@ -295,6 +295,176 @@ Feature Augmentation: Introduce better features (e.g., specific diet indicators 
 Non-Linear Models: Test an SVM with a non-linear kernel to determine if a complex, curved boundary can better separate the overlapping data points.
 
 
+# Question # 2
+
+
+# Question # 3
+<br>
+The COVID-19 pandemic introduced major disruptions to daily life, healthcare access, and emotional wellbeing. Because obesity is often associated with increased depression risk, we examine whether the **obesity–depression relationship changed after the onset of COVID-19** using **BRFSS 2018–2023**.
+
+Research Question:
+
+Did the relationship between obesity and depression change after the onset of COVID-19, controlling for key demographics (age group and sex)?
+<br>
+
+## Data Preparation & Variable Selection
+<br>
+We created binary indicators for the primary variables. Obesity status was recoded from `overweight_or_obese` into a numeric indicator where **0 = non-obese** and **1 = obese**. Depression history was recoded into a numeric indicator where **0 = no** and **1 = yes** using `depression_history`. To capture pandemic timing, we created a COVID period indicator where **pre-COVID = 0 (interview_year ≤ 2019)** and **post-COVID = 1 (interview_year ≥ 2020)**.
+
+The final modeling dataset included depress, obese, covid_period, age_group, and sex, and missing values were removed prior to modeling.
+<br>
+
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse)
+
+brfss <- readRDS("Data/Processed/brfss_2018_2023.rds")
+
+brfss$overweight_or_obese <- as.character(brfss$overweight_or_obese)
+
+brfss <- brfss %>%
+  mutate(
+    obese = if_else(overweight_or_obese == "Yes", 1L, 0L),
+    covid_period = if_else(interview_year <= 2019, 0L, 1L),
+    depress = if_else(depression_history == "Yes", 1L, 0L)
+  )
+
+model_data <- brfss %>%
+  dplyr::select(depress, obese, covid_period, age_group, sex) %>%
+  tidyr::drop_na()
+```
+
+## Modeling Approach
+
+<br> To test whether COVID changed the obesity–depression relationship, we fit a **logistic regression model** with an **interaction term** between obesity and COVID period:
+
+depress∼obese∗covid_period+age_group+sex
+
+The interaction term obese:covid_period evaluates whether the effect of obesity on depression differs between pre-COVID and post-COVID.
+
+
+```{r, message=FALSE, warning=FALSE}
+model_int_fixed <- glm(
+depress ~ obese * covid_period + age_group + sex,
+data   = model_data,
+family = binomial()
+)
+
+summary(model_int_fixed)
+
+```
+<br>
+# Odds Ratios (Pre-COVID vs Post-COVID)
+<br> To make results interpretable, we computed **odds ratios (ORs)** for obesity separately in each COVID period. The **pre-COVID OR** uses only the obesity coefficient, while the **post-COVID OR** combines the obesity coefficient with the interaction term before exponentiating.
+<br>
+
+```{r, message=FALSE, warning=FALSE}
+OR_pre <- exp(coef(model_int_fixed)["obese"])
+
+OR_post <- exp(
+coef(model_int_fixed)["obese"] +
+coef(model_int_fixed)["obese:covid_period"]
+)
+
+OR_pre
+OR_post
+
+or_df <- data.frame(
+Period = c("Pre-COVID", "Post-COVID"),
+Odds_Ratio = c(as.numeric(OR_pre), as.numeric(OR_post))
+)
+
+ggplot(or_df, aes(x = Period, y = Odds_Ratio)) +
+geom_bar(stat = "identity", fill = "orange") +
+geom_hline(yintercept = 1, linetype = "dashed") +
+labs(
+title = "Change in Obesity–Depression Association Pre vs Post COVID",
+x = "Period",
+y = "Odds Ratio (Obese vs Non-obese)"
+) +
+theme_minimal()
+
+```
+<br> **Interpretation:** If the odds ratio is **greater than 1**, obese adults have higher odds of depression than non-obese adults. If `OR_post` is higher than `OR_pre`, the obesity–depression association strengthened after COVID began; if `OR_post` is lower, the association weakened slightly post-COVID. <br>
+
+# Predicted Probability of Depression (Obesity × COVID Period)
+<br> Odds ratios are helpful, but predicted probabilities are often easier to interpret. We estimated predicted depression probabilities for four groups: 1) Non-obese, Pre-COVID 2) Obese, Pre-COVID 3) Non-obese, Post-COVID 4) Obese, Post-COVID
+
+To isolate obesity and COVID effects, predictions were generated holding age_group and sex constant at a reference level (the first factor level in the dataset).
+<br>
+
+```{r, message=FALSE, warning=FALSE}
+pred_grid <- expand.grid(
+obese = c(0, 1),
+covid_period = c(0, 1),
+age_group = levels(model_data$age_group)[1],
+sex = levels(model_data$sex)[1]
+)
+
+pred_grid$pred_prob <- predict(
+model_int_fixed,
+newdata = pred_grid,
+type = "response"
+)
+
+pred_grid <- pred_grid %>%
+mutate(
+Obesity_Status = if_else(obese == 1, "Obese", "Non-Obese"),
+Period = if_else(covid_period == 1, "Post-COVID", "Pre-COVID")
+)
+
+ggplot(pred_grid, aes(x = Period, y = pred_prob, fill = Obesity_Status)) +
+geom_bar(stat = "identity", position = "dodge") +
+labs(
+title = "Predicted Probability of Depression by Obesity and COVID Period",
+x = "Period",
+y = "Predicted Probability of Depression"
+) +
+theme_minimal()
+
+```
+<br>
+**Interpretation:** If predicted depression probabilities rise in the post-COVID period for both obesity groups, that suggests overall depression risk increased after the pandemic. If the gap between obese and non-obese changes from pre to post, that indicates the relationship between obesity and depression shifted across periods.
+<br>
+
+### Predicted Probability with 95% Confidence Intervals
+Predicted Probability with 95% Confidence Intervals
+<br> To quantify uncertainty, we computed 95% confidence intervals around predicted probabilities using standard errors on the log-odds scale and transforming back to probability.
+<br>
+
+```{r, message=FALSE, warning=FALSE}
+pred_probs <- predict(model_int_fixed, newdata = pred_grid, type = "link", se.fit = TRUE)
+
+pred_grid$fit <- plogis(pred_probs$fit)
+pred_grid$lwr <- plogis(pred_probs$fit - 1.96 * pred_probs$se.fit)
+pred_grid$upr <- plogis(pred_probs$fit + 1.96 * pred_probs$se.fit)
+
+ggplot(pred_grid, aes(x = Period, y = fit, color = Obesity_Status)) +
+geom_point(size = 3) +
+geom_errorbar(aes(ymin = lwr, ymax = upr), width = 0.1) +
+geom_line(aes(group = Obesity_Status)) +
+labs(
+title = "Predicted Probability of Depression with 95% CI",
+y = "Predicted Probability"
+) +
+theme_minimal()
+
+
+```
+
+### Critical Limitations
+Self-Reported Outcome: Depression history is self-reported and may include reporting bias; it also does not measure severity.
+
+Reference-Level Predictions: Predicted probabilities are computed at a fixed reference age_group and sex, so absolute probability values differ for other demographic profiles.
+
+Omitted Variables: This model controls only for age group and sex; additional covariates (income, race/ethnicity, exercise, alcohol use, comorbidities) may further explain depression risk and change the estimated obesity effect.
+
+### Recommendations for Future Work
+Expanded Controls: Add socioeconomic and behavioral covariates to test robustness of the obesity effect.
+
+Subgroup Analysis: Fit the model separately by sex or age_group to check for heterogeneous effects.
+
+Survey Design Considerations: If survey weights are available in the BRFSS file, incorporate them to improve population-level inference.
+
 
 
 
