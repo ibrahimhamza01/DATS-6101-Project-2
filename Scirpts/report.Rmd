@@ -296,6 +296,348 @@ Non-Linear Models: Test an SVM with a non-linear kernel to determine if a comple
 
 
 # Question # 2
+<br>
+Physical activity is widely recognized as a key behavioral factor linked to weight outcomes and chronic disease risk. Using BRFSS data from **2018–2023**, this question evaluates how strongly physical activity is associated with **BMI** and whether the relationship remains after accounting for demographic and health covariates.
+
+Research Question:
+
+To what extent can physical activity level predict an individual’s BMI, while controlling for demographic covariates and survey year?
+<br>
+
+## Data Preparation & Variable Selection
+<br>
+We first restricted the dataset to the variables needed for BMI, physical activity, demographics, health status indicators, and survey year. Variables were recoded into appropriate factor formats and ordered where meaningful (e.g., interview year, BMI category, age group, education). We also created several binary indicators to support modeling: obesity status (`obese`), exercise (`exercise`), diabetes (`diabetes`), heart attack history (`heart_attack`), coronary heart disease history (`coronary`), stroke history (`stroke`), and self-reported health (`self_health`). These transformations ensure consistent interpretation across regression and classification analyses.
+<br>
+
+```{r, message=FALSE, warning=FALSE}
+library(dplyr)
+library(survey)
+library(ggplot2)
+library(tidyr)
+library(ezids)
+library(car)
+library(pROC)
+library(pscl)
+library(corrplot)
+
+brfss = read.csv("../Data/Processed/brfss_2018_2023.rds", header=T)
+
+brfss_1 = brfss[,c(1:8,12:16,19:22,24)]
+
+str(brfss_1)
+
+brfss_1$psu = as.factor(brfss_1$psu)
+brfss_1$psu <- factor(brfss_1$psu)
+
+brfss_1$interview_year = as.factor(brfss_1$interview_year)
+brfss_1$interview_year <- factor(brfss_1$interview_year, order=T,
+levels = c("2018","2019","2020","2021","2022","2023"))
+
+brfss_1$bmi_category = as.factor(brfss_1$bmi_category)
+brfss_1$bmi_category <- factor(brfss_1$bmi_category, order=T,
+levels = c("Underweight","Normal weight","Overweight","Obese"))
+
+brfss_1$overweight_or_obese = as.factor(brfss_1$overweight_or_obese)
+brfss_1$overweight_or_obese <- factor(brfss_1$overweight_or_obese, order=T,
+levels = c("Yes","No"))
+
+brfss_1$any_exercise_last_month = as.factor(brfss_1$any_exercise_last_month)
+brfss_1$any_exercise_last_month <- factor(brfss_1$any_exercise_last_month, order=T,
+levels = c("No","Yes"))
+
+brfss_1$sex = as.factor(brfss_1$sex)
+brfss_1$sex <- factor(brfss_1$sex, order=F)
+
+brfss_1$age_group = as.factor(brfss_1$age_group)
+brfss_1$age_group <- factor(brfss_1$age_group, order=T,
+levels = c("18-24","25-29","30-34","35-39","40-44","45-49",
+"50-54","55-59","60-64","65-69","70-74","75-79","80 or older"))
+
+brfss_1$race_ethnicity = as.factor(brfss_1$race_ethnicity)
+brfss_1$race_ethnicity <- factor(brfss_1$race_ethnicity, order=F)
+
+brfss_1$education_level = as.factor(brfss_1$education_level)
+brfss_1$education_level <- factor(brfss_1$education_level, order=T,
+levels = c("No school/K","Grades 1-8","Grades 9-11",
+"Grade 12/GED","College 1-3 years","College 4+ years"))
+
+brfss_1$diabetes_status = as.factor(brfss_1$diabetes_status)
+brfss_1$diabetes_status <- factor(brfss_1$diabetes_status, order=T,
+levels = c("No","Yes","Pre-diabetes","Yes, only pregnancy"))
+
+brfss_1$coronary_hd_history = as.factor(brfss_1$coronary_hd_history)
+brfss_1$coronary_hd_history <- factor(brfss_1$coronary_hd_history, order=T,
+levels = c("No","Yes"))
+
+brfss_1$stroke_history = as.factor(brfss_1$stroke_history)
+brfss_1$stroke_history <- factor(brfss_1$stroke_history, order=T,
+levels = c("No","Yes"))
+
+brfss_1$self_reported_health = as.factor(brfss_1$self_reported_health)
+brfss_1$self_reported_health <- factor(brfss_1$self_reported_health, order=T,
+levels = c("Good or Better","Fair or Poor"))
+
+brfss_1 <- brfss_1 %>%
+mutate(obese = ifelse(bmi >= 30, 1, 0),
+exercise = ifelse(any_exercise_last_month == "No", 0, 1),
+diabetes = ifelse(diabetes_status == "No", 0, 1),
+heart_attack = ifelse(heart_attack_history == "No", 0, 1),
+coronary = ifelse(coronary_hd_history == "No", 0, 1),
+stroke = ifelse(stroke_history == "No", 0, 1),
+self_health = ifelse(self_reported_health == "Fair or Poor", 0, 1))
+
+str(brfss_1)
+
+```
+<br>
+
+## EDA
+<br> To assess relationships among numeric and binary predictors, we produced a **Spearman correlation matrix**. Spearman correlation is appropriate here because several variables are binary indicators and many relationships may be monotonic but not strictly linear. The correlation heatmap provides a quick check for potentially redundant predictors and highlights which health indicators tend to move together. <br>
+
+
+```{r, message=FALSE, warning=FALSE}
+brfss_nums = brfss_1[,c(5,10,19:25)]
+str(brfss_nums)
+
+spearman_corr <- cor(brfss_nums, use = "complete.obs", method = "spearman")
+print(spearman_corr)
+
+corrplot(spearman_corr, method = "color", type = "upper", tl.cex = 0.8)
+
+```
+<br>
+
+## Modeling Approach
+
+<br> We first modeled BMI as a continuous outcome to estimate how average BMI differs between people who were physically active vs not active. This establishes the baseline direction and magnitude of association between exercise and BMI.
+
+
+```{r, message=FALSE, warning=FALSE}
+fit1 <- lm(bmi ~ exercise, data = brfss_1)
+summary(fit1)
+xkabledply(fit1, title = paste("Model (factor):", format(formula(fit1)) ) )
+xkablevif(fit1)
+plot(fit1)
+
+
+```
+<br>
+This model estimates the mean difference in BMI between the exercise groups. A statistically significant exercise coefficient would suggest that physically active adults have a different average BMI than inactive adults, but this model does not yet adjust for age or health status.
+<br>
+
+## Linear Regression with Covariates
+<br>
+To reduce confounding, we expanded the model to include age and self-reported health. This allows us to test whether the association between exercise and BMI persists after accounting for important demographic and health differences.
+<br>
+
+```{r, message=FALSE, warning=FALSE}
+fit2 <- lm(bmi ~ exercise + age + self_health, data = brfss_1)
+summary(fit2)
+xkabledply(fit2, title = paste("Model (num):", format(formula(fit2)) ) )
+xkablevif(fit2)
+plot(fit2)
+
+)
+```
+<br> Including covariates helps interpret the exercise coefficient as the estimated association with BMI while holding age and self-reported health constant. <br>
+
+## Expanded Linear Model
+
+<br> We further included additional health indicators such as diabetes and stroke history. This model assesses whether exercise remains associated with BMI even after controlling for comorbidity patterns that are strongly linked with weight status. <br>
+
+```{r, message=FALSE, warning=FALSE}
+fit3 <- lm(bmi ~ exercise + age + self_reported_health + diabetes + stroke, data = brfss_1)
+summary(fit3)
+xkablevif(fit3)
+plot(fit3)
+
+```
+## Interaction Models
+<br> Because the relationship between exercise and BMI may differ across health status groups, we tested interaction terms. Interaction models evaluate whether the effect of one predictor changes depending on another predictor (e.g., exercise effect differing across self-reported health categories). <br>
+
+```{r, message=FALSE, warning=FALSE}
+mixfit1 = lm(bmi ~ exercise + age + exercise:self_health, data = brfss_1)
+summary(mixfit1)
+
+mixfit2 <- lm(bmi ~ exercise + age + self_reported_health + diabetes * stroke, data = brfss_1)
+summary(mixfit2)
+
+```
+<br> A significant interaction term would indicate that the association between predictors is not constant across groups (e.g., exercise relates differently to BMI for people with poor vs good health). <br>
+
+## Association Tests Using Categories
+## Chi-Squared Test: Physical Activity vs BMI Category
+
+<br> To evaluate categorical relationships, we created a contingency table between physical activity and BMI category and performed a chi-squared test. This tests whether BMI category distributions differ between physically active and inactive groups. <br>
+
+
+```{r, message=FALSE, warning=FALSE}
+
+bmi_activitytable = xtabs(~ any_exercise_last_month + bmi_category, data = brfss_1)
+bmi_activitytable
+
+chisqactivity = chisq.test(bmi_activitytable)
+chisqactivity
+
+```
+<br> A small p-value supports the conclusion that BMI category and physical activity are not independent, meaning exercise status is associated with BMI classification categories. <br>
+
+## Chi-Squared Test: Self-Reported Health vs BMI Category
+
+<br> We repeated the chi-squared procedure for self-reported health and BMI category to examine whether perceived health is related to BMI classification. <br>
+
+```{r, message=FALSE, warning=FALSE}
+bmi_selfhealthtable = xtabs(~ self_reported_health + bmi_category, data = brfss_1)
+bmi_selfhealthtable
+
+chisqselfhealth = chisq.test(bmi_selfhealthtable)
+chisqselfhealth
+
+```
+
+## Chi-Squared Test: Self-Reported Health vs Overweight/Obese Indicator
+<br> We also tested self-reported health against the overweight/obese indicator to examine whether perceived health differs across weight status. <br>
+
+```{r, message=FALSE, warning=FALSE}
+bmi_selfhealthtable2 = xtabs(~ self_reported_health + overweight_or_obese, data = brfss_1)
+bmi_selfhealthtable2
+
+chisqselfhealth2 = chisq.test(bmi_selfhealthtable2)
+chisqselfhealth2
+
+
+```
+
+## Difference in Mean BMI by Physical Activity (Two-Sample t-Test)
+
+<br> To directly compare mean BMI across physical activity groups, we conducted a two-sample t-test. This tests whether average BMI differs between adults who reported exercising in the last month versus those who did not. <br>
+
+```{r, message=FALSE, warning=FALSE}
+t.test(brfss_1$bmi ~ brfss_1$any_exercise_last_month)
+
+mean_bmi = aggregate(bmi ~ any_exercise_last_month, data = brfss_1, FUN = mean)
+mean_bmi
+
+```
+<br> A significant t-test indicates a meaningful difference in average BMI between exercise groups, and the group means provide the direction of that difference. <br>
+
+## Logistic Regression & ROC/AUC (Classification View)
+<br> In addition to modeling BMI directly, we used logistic regression to examine predictive ability in a classification setting. We first modeled physical activity status from BMI (and additional covariates), and evaluated performance using ROC curves and AUC values. <br>
+```{r, message=FALSE, warning=FALSE}
+activityLogit <- glm(any_exercise_last_month ~ bmi, data = brfss_1, family = "binomial")
+summary(activityLogit)
+
+prob = predict(activityLogit, type = "response")
+brfss_1$prob = prob
+h <- roc(any_exercise_last_month ~ prob, data = brfss_1)
+auc(h)
+plot(h)
+
+activityLogit2 <- glm(any_exercise_last_month ~ bmi + age + self_reported_health, data = brfss_1, family = "binomial")
+summary(activityLogit2)
+
+prob2 = predict(activityLogit2, type = "response")
+brfss_1$prob2 = prob2
+i <- roc(any_exercise_last_month ~ prob2, data = brfss_1)
+auc(i)
+plot(i)
+
+```
+<br> ROC/AUC provides a threshold-independent measure of discrimination. AUC values closer to 1 indicate better separation, while values near 0.5 indicate weak discrimination. <br>
+
+## Predicting Obesity (BMI ≥ 30) Using Exercise and Health Covariates
+
+<br> To directly connect physical activity to obesity status, we fit logistic regression models predicting obesity from exercise and covariates. We evaluated performance using ROC/AUC and also computed McFadden’s pseudo-R² as a measure of explanatory strength. <br>
+
+```{r, message=FALSE, warning=FALSE}
+activityLogit3 <- glm(obese ~ exercise + age + self_health, data = brfss_1, family = "binomial")
+summary(activityLogit3)
+
+prob3 = predict(activityLogit3, type = "response")
+brfss_1$prob3 = prob3
+j <- roc(obese ~ prob3, data = brfss_1)
+auc(j)
+plot(j)
+
+activityLogit3pr2 = pR2(activityLogit3)
+activityLogit3pr2
+
+```
+<br> The sign and significance of the exercise coefficient indicate whether exercise is associated with lower odds of obesity after adjusting for age and self-reported health. AUC summarizes predictive discrimination, while McFadden’s pseudo-R² provides a model-fit comparison measure. <br>
+
+## Best Subset Selection (bestglm)
+<br> To explore whether a smaller set of predictors performs comparably, we applied exhaustive best subset selection using AIC to identify a parsimonious logistic model. <br>
+
+```{r, message=FALSE, warning=FALSE}
+brfss_3 = brfss_1[,c(10,19:25)]
+str(brfss_3)
+
+loadPkg("bestglm")
+res.bestglm1 <- bestglm(Xy = brfss_3, family = binomial, IC = "AIC", method = "exhaustive")
+summary(res.bestglm1)
+res.bestglm1$BestModels
+
+brfss_2 = brfss_1[,c(5,10,19:25)]
+str(brfss_2)
+
+res.bestglm <- bestglm(Xy = brfss_2, family = binomial, IC = "AIC", method = "exhaustive")
+summary(res.bestglm)
+res.bestglm$BestModels
+
+```
+
+## Expanded Obesity Model + Confusion Matrix
+<br> We also fit expanded logistic models including additional comorbidity indicators (diabetes, stroke, coronary disease, heart attack history). Model evaluation included ROC/AUC and confusion matrices to summarize classification behavior at a default threshold (0.5). <br>
+
+```{r, message=FALSE, warning=FALSE}
+activityLogit4 <- glm(obese ~ exercise + age + self_health + diabetes + stroke + heart_attack + coronary,
+data = brfss_3, family = "binomial")
+summary(activityLogit4)
+
+prob4 = predict(activityLogit4, type = "response")
+brfss_3$prob4 = prob4
+k <- roc(obese ~ prob4, data = brfss_3)
+auc(k)
+plot(k)
+
+activityLogit4pr2 = pR2(activityLogit4)
+activityLogit4pr2
+
+activityLogit5 <- glm(obese ~ exercise + age + self_health + diabetes + stroke + coronary,
+data = brfss_3, family = "binomial")
+summary(activityLogit5)
+
+prob5 = predict(activityLogit5, type = "response")
+brfss_3$prob5 = prob5
+k <- roc(obese ~ prob5, data = brfss_3)
+auc(k)
+plot(k)
+
+activityLogit5pr2 = pR2(activityLogit5)
+activityLogit5pr2
+
+library(ModelMetrics)
+xkabledply(confusionMatrix(actual = activityLogit5$y, predicted = activityLogit5$fitted.values),
+title = "Confusion matrix from Logit Model")
+
+```
+<br> The confusion matrix complements AUC by showing how predictions behave under a specific threshold. Together with pseudo-R², these outputs summarize both discrimination and overall explanatory strength. <br>
+
+### Critical Limitations
+BMI is self-reported in BRFSS, which can introduce measurement error and bias.
+
+Physical activity is measured as a binary “any exercise last month” indicator, which does not capture intensity, frequency, or duration, limiting predictive power.
+
+Models may be affected by omitted variables (diet quality, environment, access to recreation, and socioeconomic detail), and associations should not be interpreted as causal.
+
+### Recommendations for Future Work
+EReplace binary physical activity with richer measures (minutes per week or activity intensity) if available to better capture behavioral variation.
+
+Include broader socioeconomic and behavioral covariates (income, race/ethnicity, alcohol use, smoking) to reduce confounding.
+
+Test survey-weighted models (BRFSS sampling weights) for more accurate population-level inference.
+
+
 
 
 # Question # 3
@@ -386,7 +728,7 @@ theme_minimal()
 ```
 <br> **Interpretation:** If the odds ratio is **greater than 1**, obese adults have higher odds of depression than non-obese adults. If `OR_post` is higher than `OR_pre`, the obesity–depression association strengthened after COVID began; if `OR_post` is lower, the association weakened slightly post-COVID. <br>
 
-# Predicted Probability of Depression (Obesity × COVID Period)
+## Predicted Probability of Depression (Obesity × COVID Period)
 <br> Odds ratios are helpful, but predicted probabilities are often easier to interpret. We estimated predicted depression probabilities for four groups: 1) Non-obese, Pre-COVID 2) Obese, Pre-COVID 3) Non-obese, Post-COVID 4) Obese, Post-COVID
 
 To isolate obesity and COVID effects, predictions were generated holding age_group and sex constant at a reference level (the first factor level in the dataset).
