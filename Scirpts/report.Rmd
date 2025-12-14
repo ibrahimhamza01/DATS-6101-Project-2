@@ -317,7 +317,7 @@ The final modeling dataset included depress, obese, covid_period, age_group, and
 ```{r, message=FALSE, warning=FALSE}
 library(tidyverse)
 
-brfss <- readRDS("Data/Processed/brfss_2018_2023.rds")
+brfss <- readRDS("../Data/Processed/brfss_2018_2023.rds")
 
 brfss$overweight_or_obese <- as.character(brfss$overweight_or_obese)
 
