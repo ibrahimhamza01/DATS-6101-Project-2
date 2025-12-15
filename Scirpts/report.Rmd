@@ -320,7 +320,7 @@ library(pROC)
 library(pscl)
 library(corrplot)
 
-brfss = read.csv("../Data/Processed/brfss_2018_2023.rds", header=T)
+brfss = readRDS("../Data/Processed/brfss_2018_2023.rds")
 
 brfss_1 = brfss[,c(1:8,12:16,19:22,24)]
 
@@ -437,7 +437,7 @@ xkabledply(fit2, title = paste("Model (num):", format(formula(fit2)) ) )
 xkablevif(fit2)
 plot(fit2)
 
-)
+
 ```
 <br> Including covariates helps interpret the exercise coefficient as the estimated association with BMI while holding age and self-reported health constant. <br>
 
@@ -569,20 +569,58 @@ activityLogit3pr2
 <br> To explore whether a smaller set of predictors performs comparably, we applied exhaustive best subset selection using AIC to identify a parsimonious logistic model. <br>
 
 ```{r, message=FALSE, warning=FALSE}
-brfss_3 = brfss_1[,c(10,19:25)]
-str(brfss_3)
+library(bestglm)
 
-loadPkg("bestglm")
-res.bestglm1 <- bestglm(Xy = brfss_3, family = binomial, IC = "AIC", method = "exhaustive")
+# -------------------------------
+# Model 1
+# -------------------------------
+brfss_3 <- brfss_1[, c(10, 19:25)]
+
+# Convert all columns to numeric (required for bestglm)
+brfss_3 <- data.frame(lapply(brfss_3, function(x) as.numeric(unlist(x))))
+
+# Force binary response 0/1
+brfss_3[, 1] <- ifelse(brfss_3[, 1] == 1, 1, 0)
+
+# Remove missing values
+brfss_3 <- na.omit(brfss_3)
+
+res.bestglm1 <- bestglm(
+  Xy = brfss_3,
+  family = binomial,
+  IC = "AIC",
+  method = "exhaustive"
+)
+
 summary(res.bestglm1)
 res.bestglm1$BestModels
 
-brfss_2 = brfss_1[,c(5,10,19:25)]
-str(brfss_2)
 
-res.bestglm <- bestglm(Xy = brfss_2, family = binomial, IC = "AIC", method = "exhaustive")
+# -------------------------------
+# Model 2
+# -------------------------------
+brfss_2 <- brfss_1[, c(10, 5, 19:25)]
+
+# Convert all columns to numeric
+brfss_2 <- data.frame(lapply(brfss_2, function(x) as.numeric(unlist(x))))
+
+# Force binary response 0/1
+brfss_2[, 1] <- ifelse(brfss_2[, 1] == 1, 1, 0)
+
+# Remove missing values
+brfss_2 <- na.omit(brfss_2)
+
+res.bestglm <- bestglm(
+  Xy = brfss_2,
+  family = binomial,
+  IC = "AIC",
+  method = "exhaustive"
+)
+
 summary(res.bestglm)
 res.bestglm$BestModels
+
+
 
 ```
 
