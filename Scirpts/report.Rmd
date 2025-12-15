@@ -45,9 +45,15 @@ brfss = readRDS("../Data/Processed/brfss_2018_2023.rds")
 # Introduction
 
 ## Project Overview
-This project examines the **impact of COVID-19 on obesity and lifestyle behaviors** among U.S. adults using the **CDC Behavioral Risk Factor Surveillance System (BRFSS)** data from **2018–2023**.  
-The BRFSS is a nationally representative health survey that collects information on demographics, chronic health conditions, and behavioral risk factors from approximately **400,000 adults annually** across all 50 states, Washington D.C., and U.S. territories.  
-Our primary goal is to evaluate how obesity prevalence and lifestyle behaviors such as physical activity and alcohol use have changed before and after the onset of COVID-19, and how these trends vary by demographic and health factors.
+This project **builds upon the exploratory and descriptive analysis** conducted in **Project 1**, which examined changes in **obesity prevalence** and **lifestyle behaviors** among U.S. adults **before and after the onset of COVID-19** using **BRFSS data (2018–2023)**.
+
+Moving beyond **trend analysis**, **Project 2** focuses on **statistical modeling and prediction** to better understand the factors associated with **obesity** and **BMI** in the **post-COVID period**.
+
+Using **nationally representative BRFSS data**, we develop **predictive and inferential models** to assess how **demographic**, **behavioral**, and **temporal factors** relate to obesity outcomes.
+
+In particular, we examine the roles of **physical activity**, **alcohol use**, and **mental health**, while controlling for key **sociodemographic covariates**.
+
+These models aim to provide **rigorous, data-driven insights** into **obesity risk** and its **behavioral correlates** following the **COVID-19 pandemic**.
 
 
 ## Data Sources
@@ -845,8 +851,12 @@ Subgroup Analysis: Fit the model separately by sex or age_group to check for het
 
 Survey Design Considerations: If survey weights are available in the BRFSS file, incorporate them to improve population-level inference.
 
+# References
 
-
+<br>
+- Centers for Disease Control and Prevention. (2023). *BRFSS overview.* https://www.cdc.gov/brfss/annual_data/2023/pdf/Overview_2023-508.pdf  
+- Centers for Disease Control and Prevention. (2021). *Behavioral Risk Factor Surveillance System comparability of data BRFSS 2020.* https://www.cdc.gov/brfss/annual_data/2020/pdf/compare-2020-508.pdf
+<br><br><br>
 
 
 
