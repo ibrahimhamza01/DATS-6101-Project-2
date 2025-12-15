@@ -516,7 +516,7 @@ Looking at our linear models, we can conclude that the strongest models includes
 <br>
 <br>
 ## Logistic Regression & ROC/AUC (Classification View)
-<br> In addition to modeling BMI directly, we used logistic regression to examine predictive ability in a classification setting. We first modeled physical activity status from BMI (and additional covariates), and evaluated performance using ROC curves and AUC values. <br>
+<br> In addition to modeling BMI directly, we used logistic regression to examine predictive ability in a classification setting. We first modeled physical activity status from BMI (and additional covariates), and evaluated performance using ROC curves and AUC values. In the logistic regressions model for obese, 0 represents obese and 1 represents not obese. <br>
 ```{r, message=FALSE, warning=FALSE}
 activityLogit <- glm(any_exercise_last_month ~ bmi, data = brfss_1, family = "binomial")
 summary(activityLogit)
